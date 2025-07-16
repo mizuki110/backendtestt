@@ -1,51 +1,36 @@
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const app = express();
-
-app.use(cors({ origin: '*' })); // Allow all origins
-app.use(express.json());
-
 app.get('/api/roblox/user/:username', async (req, res) => {
   try {
     const username = req.params.username;
     
-    // First API call - Get user ID
+    // First, get the user ID from the username
     const userResponse = await axios.post(
       'https://users.roblox.com/v1/usernames/users',
-      { usernames: [username], excludeBannedUsers: false },
-      { headers: { 'Content-Type': 'application/json' } }
+      { usernames: [username], excludeBannedUsers: false }
     );
 
-    // Check if user exists
-    if (!userResponse.data || !userResponse.data.data.length) {
+    // Check if the user exists
+    if (!userResponse.data?.data?.[0]) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     const userId = userResponse.data.data[0].id;
 
-    // Second API call - Get detailed user info
-    const profileResponse = await axios.get(`https://users.roblox.com/v1/users/${userId}`);
+    // Run all other API calls in parallel for speed
+    const [
+      profileResponse,
+      pfpResponse,
+      friendsResponse,
+      followersResponse,
+      followingResponse
+    ] = await Promise.all([
+      axios.get(`https://users.roblox.com/v1/users/${userId}`),
+      axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`),
+      axios.get(`https://friends.roblox.com/v1/users/${userId}/friends/count`),
+      axios.get(`https://friends.roblox.com/v1/users/${userId}/followers/count`),
+      axios.get(`https://friends.roblox.com/v1/users/${userId}/followings/count`)
+    ]);
 
-    // Third API call - Get user profile picture (PFP)
-    const pfpResponse = await axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`);
-    
-    // Fourth API call - Get friends count
-    const friendsResponse = await axios.get(`https://friends.roblox.com/v1/users/${userId}/friends/count`);
-
-    // Fifth API call - Get followers count
-    const followersResponse = await axios.get(`https://friends.roblox.com/v1/users/${userId}/followers/count`);
-
-    // Sixth API call - Get following count
-    const followingResponse = await axios.get(`https://friends.roblox.com/v1/users/${userId}/followings/count`);
-
-    // Extract necessary data
-    const pfpUrl = pfpResponse.data?.data?.[0]?.imageUrl || '';
-    const friendsCount = friendsResponse.data?.count || 0;
-    const followersCount = followersResponse.data?.count || 0;
-    const followingCount = followingResponse.data?.count || 0;
-
-    // Prepare user data
+    // Combine the data from all responses
     const userData = {
       id: userId,
       name: profileResponse.data.name,
@@ -53,32 +38,19 @@ app.get('/api/roblox/user/:username', async (req, res) => {
       description: profileResponse.data.description || '',
       created: profileResponse.data.created,
       isBanned: profileResponse.data.isBanned || false,
-      profilePicture: pfpUrl,
-      friendsCount: friendsCount,
-      followersCount: followersCount,
-      followingCount: followingCount
+      profilePicture: pfpResponse.data?.data?.[0]?.imageUrl || '',
+      friendsCount: friendsResponse.data?.count || 0,
+      followersCount: followersResponse.data?.count || 0,
+      followingCount: followingResponse.data?.count || 0
     };
 
     res.json(userData);
+
   } catch (error) {
-    console.error('Error fetching Roblox data:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
-
-    if (error.response?.status === 404) {
-      res.status(404).json({ error: 'User not found' });
-    } else if (error.response?.status === 403) {
-      res.status(403).json({ error: 'Access forbidden. API may have rate limits.' });
-    } else {
-      res.status(500).json({ error: 'Failed to fetch user data. Please try again later.' });
-    }
+    // Log the detailed error on the server for debugging
+    console.error('Error fetching Roblox data:', error.message);
+    
+    // Send a generic error to the client
+    res.status(500).json({ error: 'Failed to fetch user data. The user may not exist or the Roblox API is unavailable.' });
   }
-});
-
-const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
