@@ -1,3 +1,15 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const app = express();
+
+// --- Middleware Setup ---
+// This allows your frontend to connect and handles data parsing
+app.use(cors({ origin: '*' }));
+app.use(express.json());
+
+// --- API Route ---
+// This is the updated, faster logic for fetching Roblox data
 app.get('/api/roblox/user/:username', async (req, res) => {
   try {
     const username = req.params.username;
@@ -53,4 +65,11 @@ app.get('/api/roblox/user/:username', async (req, res) => {
     // Send a generic error to the client
     res.status(500).json({ error: 'Failed to fetch user data. The user may not exist or the Roblox API is unavailable.' });
   }
+});
+
+// --- Server Startup ---
+// This uses the correct port for Render
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
